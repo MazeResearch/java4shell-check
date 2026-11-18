@@ -6,7 +6,7 @@
 # check-image.sh) so that every mode reaches the same verdict from the same
 # evidence. POSIX sh only.
 
-J4S_FALLBACK_VERSION="1.0.0"
+J4S_FALLBACK_VERSION="1.0.1"
 
 # j4s_tool_version <tool dir>
 j4s_tool_version() {
@@ -257,11 +257,16 @@ j4s_jdk_home_of() {
 # it started) and the JDK's release file through /proc/<pid>/root (version,
 # vendor, variant). Sets:
 #   PID_IS_JVM (0/1), JHOME, VER, VENDOR, VSTAT, STALE (0/1), OPENJ9 (0/1)
-# A replaced JDK (STALE=1) makes VSTAT=UNKNOWN_VERSION: the release file on
-# disk then describes the new JDK, not the code this JVM runs.
+# When the JDK was replaced on disk after the JVM started (STALE=1), the
+# release file describes the NEW JDK. The version this JVM actually runs is
+# then read from the old libjvm it still has mapped, through
+# /proc/<pid>/map_files (read only, never executed; needs root with
+# CAP_SYS_ADMIN, i.e. root on the host). If that can't be read, VER is empty
+# and VSTAT=UNKNOWN_VERSION. RUNVER_FROM_MEMORY=1 when it was read that way.
 j4s_inspect_pid() {
   _d="/proc/$1"
   PID_IS_JVM=0; JHOME=""; VER=""; VENDOR=""; VSTAT="UNKNOWN_VERSION"; STALE=0; OPENJ9=0
+  RUNVER_FROM_MEMORY=0
   [ -r "$_d/maps" ] || return 0
   _lib=$(grep -m1 -E '/lib(jvm|j9vm[0-9]*)\.so( \(deleted\))?$' "$_d/maps" 2>/dev/null) || return 0
   [ -n "$_lib" ] || return 0
@@ -282,7 +287,24 @@ OpenJ9"
   case "$_rel" in *'JVM_VARIANT="Openj9"'*) _full="$_full
 OpenJ9" ;; esac
   if [ $STALE -eq 1 ]; then
+    VER=""
     VSTAT="UNKNOWN_VERSION"
+    _range=$(printf '%s\n' "$_lib" | awk '{print $1}')
+    _mf="$_d/map_files/$_range"
+    if [ -r "$_mf" ]; then
+      # HotSpot embeds its full version (e.g. 21.0.13+9-LTS, 21.0.13.1+2-LTS):
+      # take the most frequent version-shaped string and drop the build part.
+      _rv=$(LC_ALL=C grep -a -o -E '[0-9]{1,2}\.[0-9]+\.[0-9]+(\.[0-9]+){0,2}\+[0-9]+(-LTS)?' "$_mf" 2>/dev/null \
+            | sort | uniq -c | sort -rn | awk 'NR == 1 {print $2}' | sed 's/+.*//')
+      if [ -n "$_rv" ]; then
+        VER=$_rv
+        RUNVER_FROM_MEMORY=1
+        _rf="version \"$_rv\""
+        [ $OPENJ9 -eq 1 ] && _rf="$_rf
+OpenJ9"
+        VSTAT=$(j4s_classify_version "$VER" "$_rf")
+      fi
+    fi
   else
     VSTAT=$(j4s_classify_version "$VER" "$_full")
   fi
@@ -495,6 +517,20 @@ j4s_verdict() {
     VERDICT="UNCERTAIN - affected JDK; CPU capability could not be determined ($HW)"
     EXIT_CODE=3
     VERDICT_NOTE=$_portable_note
+  fi
+}
+
+# j4s_apply_stale  (reads STALE, VER, EXIT_CODE, VERDICT; after j4s_verdict)
+# A JVM whose JDK was replaced on disk after it started keeps running the old
+# code. If that running version is known and vulnerable, it stays VULNERABLE
+# (with a restart note); if it can't be decided, it is RESTART_REQUIRED.
+j4s_apply_stale() {
+  [ "${STALE:-0}" -eq 1 ] || return 0
+  if [ "$EXIT_CODE" -eq 1 ]; then
+    VERDICT="$VERDICT. The JDK on disk was replaced after this JVM started: it keeps running $VER until it is restarted"
+  elif [ "$EXIT_CODE" -ne 0 ]; then
+    VERDICT="RESTART REQUIRED - JDK replaced on disk after this JVM started; it still runs the old code${VER:+ ($VER)}. Restart it, then re-check"
+    EXIT_CODE=3
   fi
 }
 

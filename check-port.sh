@@ -15,14 +15,18 @@
 #      Docker-published ports are delegated to check-container.sh.
 #   2. Identify the JVM from /proc only: its JDK (mapped libjvm), the JDK's
 #      version (the JDK's release file, read through /proc/<pid>/root), and
-#      whether the JDK was replaced on disk since the process started.
-#      No binary belonging to the target is ever executed by this script.
-#   3. Read the process's EFFECTIVE flags with `jcmd <pid> VM.flags -all`.
-#      When run as root, jcmd runs as the process's own user (setpriv), never
-#      as root. Without jcmd, the flags are rebuilt from the command line,
-#      option files and environment with the JVM's precedence rules.
+#      whether the JDK was replaced on disk since the process started (then
+#      the running version is read from the old libjvm still mapped in
+#      memory, via /proc/<pid>/map_files).
+#   3. Rebuild the process's EFFECTIVE flags from its command line, option
+#      files (@argfiles, -XX:VMOptionsFile) and environment, with the JVM's
+#      precedence rules.
 #   4. Verdict for the running service: its JDK version x this CPU x its
 #      effective flags.
+#
+# It only reads files. It never executes anything belonging to the target
+# (no java, no jcmd): a binary from a container's filesystem run from the
+# host would escape that container's isolation.
 #
 # Run as root or as the process owner (other users' /proc entries are
 # unreadable otherwise). Linux only.
@@ -140,89 +144,33 @@ printf 'options: %s\n' "$(j4s_relevant_opts "$(tr '\000' ' ' < "/proc/$PID/cmdli
 # ---------------------------------------------- effective flags of the process
 echo
 echo "== running process flags (authoritative for this service) =="
-REAL_FLAGS=""
-REAL_SRC=""
-REAL_VERSION_OUT=""
-RUN_VER=""
-JCMD=""
-for j in "$JHOME/bin/jcmd" "$(dirname "$JHOME")/bin/jcmd"; do
-  [ -x "/proc/$PID/root$j" ] && { JCMD="/proc/$PID/root$j"; break; }
-done
-# jcmd belongs to the target's JDK, so it is never run with more privilege
-# than the target itself: as root it runs as the process owner via setpriv,
-# otherwise as the caller (attach only works for the same user anyway).
-run_jcmd() { # $1 = pattern the real output must contain, rest = jcmd command
-  _pat=$1; shift
-  _uid=$(awk '/^Uid:/{print $2}' "/proc/$PID/status" 2>/dev/null)
-  _gid=$(awk '/^Gid:/{print $2}' "/proc/$PID/status" 2>/dev/null)
-  if [ "$(id -u)" = "0" ]; then
-    [ -n "$_uid" ] && [ "$_uid" != "0" ] && command -v setpriv >/dev/null 2>&1 || return 0
-    _o=$(setpriv --reuid="$_uid" --regid="$_gid" --clear-groups "$JCMD" "$PID" "$@" 2>/dev/null)
-  elif [ "$(id -u)" = "$_uid" ]; then
-    _o=$("$JCMD" "$PID" "$@" 2>/dev/null)
-  else
-    return 0
-  fi
-  printf '%s\n' "$_o" | grep -q "$_pat" && printf '%s' "$_o"
-  return 0
-}
-if [ -n "$JCMD" ]; then
-  REAL_FLAGS=$(run_jcmd ' UseBASE64Intrinsics ' VM.flags -all)
-  [ -n "$REAL_FLAGS" ] && REAL_SRC="jcmd $PID VM.flags -all (effective values)"
-  REAL_VERSION_OUT=$(run_jcmd '^JDK ' VM.version)
-fi
-
-ARGFILE=0
-ENV_READABLE=1
-if [ -z "$REAL_FLAGS" ]; then
-  # No jcmd (JRE images), root process, or attach failed: rebuild from the
-  # command line, option files and environment.
-  j4s_proc_flags "$PID" "$(j4s_major "$VER")"
-  REAL_FLAGS=$PROC_FLAGS
-  ARGFILE=$PROC_ARGFILE
-  ENV_READABLE=$PROC_ENV_READABLE
-  REAL_SRC="command line + option files + environment (jcmd not used)"
-  [ "$ENV_READABLE" -eq 0 ] && REAL_SRC="$REAL_SRC; environment NOT readable"
-fi
-j4s_parse_flags "$REAL_FLAGS"
+j4s_proc_flags "$PID" "$(j4s_major "$VER")"
+REAL_SRC="command line + option files + environment of pid $PID"
+[ "$PROC_ENV_READABLE" -eq 0 ] && REAL_SRC="$REAL_SRC; environment NOT readable"
+j4s_parse_flags "$PROC_FLAGS"
 echo "  source: $REAL_SRC"
 echo "  effective: $FLAG_STATUS ($FLAG_DETAIL)"
-TRUSTED=1
-case "$REAL_SRC" in
-  jcmd*) ;;
-  *)
-    if [ "$ARGFILE" -eq 1 ]; then
-      TRUSTED=0
-      echo "  note: some options come from a file this tool could not read (or -XX:Flags=);"
-      echo "  note: run as root or the process owner, or install a full JDK (jcmd)."
-    fi
-    if [ "$ENV_READABLE" -eq 0 ]; then
-      TRUSTED=0
-      echo "  note: cannot read the process environment (_JAVA_OPTIONS can override the command line)."
-    fi
-    ;;
-esac
 # A mitigation we cannot fully see is not credited.
-if [ $TRUSTED -eq 0 ] && { [ "$FLAG_STATUS" = "FLAG_OFF" ] || [ "$FLAG_STATUS" = "FLAG_AVX2" ]; }; then
+if [ "$PROC_ARGFILE" -eq 1 ]; then
+  echo "  note: some options come from a file this tool could not read (or -XX:Flags=);"
+  echo "  note: run as root or as the process owner."
+fi
+[ "$PROC_ENV_READABLE" -eq 0 ] && echo "  note: cannot read the process environment (_JAVA_OPTIONS can override the command line)."
+if { [ "$PROC_ARGFILE" -eq 1 ] || [ "$PROC_ENV_READABLE" -eq 0 ]; } && \
+   { [ "$FLAG_STATUS" = "FLAG_OFF" ] || [ "$FLAG_STATUS" = "FLAG_AVX2" ]; }; then
   FLAG_STATUS="FLAG_UNKNOWN"
 fi
 
 # ------------------------------------------------- version of the running JVM
 echo
 echo "== running JVM =="
-if [ -n "$REAL_VERSION_OUT" ]; then
-  # jcmd VM.version: "JDK 21.0.13" - what the process actually runs, even when
-  # the JDK on disk has been replaced since.
-  RUN_VER=$(j4s_safe "$(printf '%s\n' "$REAL_VERSION_OUT" | sed -n 's/^JDK \([0-9][^ ]*\).*/\1/p' | head -n 1)")
-  if [ -n "$RUN_VER" ]; then
-    JAVA_VERSION=$RUN_VER
-    _full=$REAL_VERSION_OUT
-    [ "$OPENJ9" -eq 1 ] && _full="$_full
-OpenJ9"
-    VSTAT=$(j4s_classify_version "$RUN_VER" "$_full")
-    echo "  source: jcmd $PID VM.version"
+if [ "$STALE" -eq 1 ]; then
+  if [ "$RUNVER_FROM_MEMORY" -eq 1 ]; then
+    echo "  source: the old libjvm still mapped in memory (the JDK on disk was replaced)"
+  else
+    echo "  source: unavailable - the JDK on disk was replaced and the old libjvm can't be read (needs root on the host)"
   fi
-elif [ "$STALE" -eq 0 ]; then
+else
   echo "  source: $JHOME/release (read through /proc/$PID/root)"
 fi
 printf '  version: %s -> %s\n' "${JAVA_VERSION:-unknown}" "$VSTAT"
@@ -240,14 +188,7 @@ if [ "$STALE" -eq 1 ]; then
   echo "WARNING: still mapped). The service still runs the OLD JDK."
 fi
 j4s_verdict
-if [ "$STALE" -eq 1 ] && [ "$EXIT_CODE" -ne 0 ]; then
-  if [ "$EXIT_CODE" -eq 1 ]; then
-    VERDICT="$VERDICT. The JDK on disk was replaced after it started: patching the disk is not enough, restart it"
-  else
-    VERDICT="RESTART REQUIRED - it runs a JDK that has since been replaced on disk${RUN_VER:+ (running: $RUN_VER, $VSTAT)}. Restart it, then re-run this check"
-    EXIT_CODE=3
-  fi
-fi
+j4s_apply_stale
 echo "flags source: $REAL_SRC"
 j4s_print_verdict
 j4s_result_line "${J4S_MODE:-process}" "${J4S_TARGET:-$(uname -n 2>/dev/null) pid $PID${PORT:+ port $PORT}}"

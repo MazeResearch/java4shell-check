@@ -6,8 +6,8 @@
 # Bonus over image mode: docker exec inherits the container's real runtime
 # environment (JAVA_TOOL_OPTIONS=... passed with -e are honored), and every
 # running JVM in the container is checked with check-port.sh --pid, which
-# reads its EFFECTIVE flags (jcmd) and detects a JDK replaced under a JVM
-# that was not restarted.
+# rebuilds its EFFECTIVE flags from /proc and detects a JDK replaced under a
+# JVM that was not restarted.
 #
 # What it touches: copies check.sh, check-port.sh and lib/ into the
 # container's /tmp/.j4s-check, runs them with docker exec, and removes them

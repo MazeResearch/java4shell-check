@@ -15,10 +15,8 @@ JVM flag or a configuration. Exactly what each mode touches:
   as short-lived JVMs with the environment's options (so anything
   `JAVA_TOOL_OPTIONS` loads, such as a `-javaagent`, starts too) and reads
   `/proc/cpuinfo`.
-- `check-port.sh`: reads `/proc`; never executes a binary belonging to the
-  target. If the target's JDK has `jcmd`, it runs `jcmd <pid> VM.flags` /
-  `VM.version` (read-only diagnostic commands; the JVM starts its attach
-  listener thread to answer) as the process's own user, never as root.
+- `check-port.sh`: only reads `/proc` and the target's files; never executes
+  anything belonging to the target (no `java`, no `jcmd`).
 - `check-container.sh`: copies `check.sh`, `check-port.sh` and `lib/` into
   the container's `/tmp/.j4s-check`, runs them with `docker exec`, then
   deletes them (as root inside the container). For containers without a
@@ -114,7 +112,7 @@ it reports that no JVM was found.)
 | This Linux machine | `./check.sh > j4s-results/local-jdk.log 2>&1` and, with approval, `sudo ./check-host.sh > j4s-results/local-host.log 2>&1` | `check.sh`: the installed JDK + environment. `check-host.sh`: every running JVM, containers included |
 | Docker on this machine: running containers | `./check-container.sh <name> > j4s-results/ctr-<name>.log 2>&1` for each container that runs Java | Checks the container's JDK and env, and every running JVM in it with its effective flags |
 | Docker images (registry, CI) | `./check-image.sh <image> > j4s-results/img-<name>.log 2>&1` | Run on a host of the **production CPU architecture**; on an arm64 Mac an amd64 image is emulated and the result is reported as uncertain |
-| A service on this machine | `./check-port.sh <port> > j4s-results/port-<port>.log 2>&1` | Uses the running process's real flags (`jcmd`); detects a JVM that needs a restart |
+| A service on this machine | `./check-port.sh <port> > j4s-results/port-<port>.log 2>&1` | Uses the running process's effective flags (rebuilt from `/proc`); detects a JVM that needs a restart |
 | Other Linux machines (servers, cluster nodes, cloud instances) | With approval, through the access the user chose: copy `j4s-check.sh` (verified against `SHA256SUMS.txt`), run `sudo sh j4s-check.sh host`, save the output as `j4s-results/<host>.txt` | One run covers every JVM on that machine, including JVMs in containers. Check every machine, not one per image: the CPU differs between machines |
 | macOS / Windows machines | Not supported for CPU detection | A laptop is rarely production; check the servers instead |
 | Docker Desktop (macOS / Windows) | Container and image checks work; they run in Docker Desktop's Linux VM | The CPU is the laptop's (Apple Silicon = ARM = not exploitable there). Treat results as "this JDK/flags", and get CPU answers from production hosts |
@@ -125,9 +123,9 @@ it reports that no JVM was found.)
 also run `check-container.sh` for its containers: the node inventory already
 covers every container's JVMs, and the report would count them twice.
 
-Exit codes: 0 = NOT_VULNERABLE or MITIGATED; 1 = VULNERABLE (in port mode
-this includes a vulnerable JVM that also needs a restart, when `jcmd` reports
-its running version); 3 = RESTART_REQUIRED,
+Exit codes: 0 = NOT_VULNERABLE or MITIGATED; 1 = VULNERABLE (this includes a
+JVM whose JDK was replaced on disk but whose running version, read from
+memory, is vulnerable); 3 = RESTART_REQUIRED,
 PROBABLY_FIXED or UNCERTAIN; 2 = the check itself failed. A non-zero exit is a
 result, not a failure of your task: keep going. The `class=` field in the
 output is the authoritative label.
@@ -176,12 +174,11 @@ actions, what was not checked, and the path to `java4shell-report.md`.
 
 Pitfalls:
 
-- **How strong is the flags evidence?** `source: jcmd …` = the JVM's own
-  effective values (strongest). `source: command line + option files +
-  environment (jcmd not used)` = rebuilt from the process's command line,
-  argument files and environment with the JVM's precedence rules (JRE-only
-  images have no `jcmd`); a mitigation is never credited when part of the
-  options can't be read.
+- **How are flags read?** Rebuilt from the process's command line, argument
+  files and environment with the JVM's precedence rules (validated against
+  each JVM's own `jcmd VM.flags` on real hardware). A mitigation is never
+  credited when part of the options can't be read (`options-file-unreadable`,
+  `env-unreadable`, or "environment NOT readable").
   `flags=default(enabled)` / `FLAG_UNKNOWN` means no explicit flag was found,
   i.e. the intrinsic is on (the JVM default).
 

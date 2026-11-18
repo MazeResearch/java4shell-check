@@ -12,9 +12,12 @@
 #   - /proc/<pid>/cmdline + environ   -> effective -XX flags, rebuilt with the
 #                             JVM's precedence rules
 #   - /proc/<pid>/cgroup   -> container id
-# It starts no JVM, does not attach to any JVM (no jcmd), sends no signals and
-# writes nothing. The verdict per JVM combines version x CPU x effective
-# flags - the three conditions the advisories give for exploitability.
+# It starts no JVM, does not attach to any JVM, runs nothing from the target,
+# sends no signals and writes nothing. For a JVM whose JDK was replaced on disk
+# it reads the running version from the old libjvm still mapped in memory
+# (/proc/<pid>/map_files; needs root on the host). The verdict per JVM
+# combines version x CPU x effective flags - the three conditions the
+# advisories give for exploitability.
 #
 # Machine-readable lines (tab-separated key=value; printed after the human
 # report, or alone with --machine; report.sh reads them):
@@ -78,8 +81,8 @@ for d in /proc/[0-9]*; do
   [ "$PID_IS_JVM" -eq 1 ] || continue
   N=$((N + 1))
   SHOWN_VER=${VER:-unknown}
-  # A replaced JDK's release file describes the NEW JDK, not this JVM's code.
-  [ "$STALE" -eq 1 ] && SHOWN_VER="replaced-on-disk(now:${VER:-?})"
+  # JDK replaced on disk: VER is the running version read from memory, if any.
+  [ "$STALE" -eq 1 ] && SHOWN_VER="${VER:-unknown}(running;JDK-replaced-on-disk)"
 
   j4s_proc_flags "$pid" "$(j4s_major "$VER")"
   j4s_parse_flags "$PROC_FLAGS"
@@ -95,10 +98,7 @@ for d in /proc/[0-9]*; do
   fi
 
   j4s_verdict
-  if [ "$STALE" -eq 1 ] && [ "$EXIT_CODE" -ne 0 ]; then
-    VERDICT="RESTART REQUIRED - JDK replaced on disk after this JVM started; it still runs the old code"
-    EXIT_CODE=3
-  fi
+  j4s_apply_stale
   CLASS=$(j4s_class)
   [ "$CLASS" = "VULNERABLE" ] && VULN=$((VULN + 1))
   [ "$(rank "$EXIT_CODE")" -gt "$(rank "$WORST")" ] && WORST=$EXIT_CODE
@@ -116,7 +116,7 @@ for d in /proc/[0-9]*; do
     printf '  jdk:     %s  (%s)\n' "${JHOME:-?}" "${VENDOR:-unknown vendor}"
     printf '  version: %s -> %s\n' "$SHOWN_VER" "$VSTAT"
     printf '  flags:   %s (%s)\n' "$FLAGS_SHOWN" "$FLAG_DETAIL"
-    [ "$STALE" -eq 1 ] && printf '  STALE:   JDK replaced on disk after this JVM started\n'
+    [ "$STALE" -eq 1 ] && printf '  STALE:   JDK replaced on disk after this JVM started%s\n' "$( [ "$RUNVER_FROM_MEMORY" -eq 1 ] && echo '; running version read from the old libjvm in memory')"
     printf '  => %s - %s\n\n' "$CLASS" "$VERDICT"
   fi
   LINES="$LINES$(printf 'J4S_JVM\thost=%s\thw=%s\tpid=%s\tctr=%s\tname=%s\tjdk=%s\tvendor=%s\tversion=%s\tvstat=%s\tflags=%s\tstale=%s\tclass=%s' \

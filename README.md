@@ -102,7 +102,7 @@ The JDK version is classified against the advisories: 17.0.6 to 17.0.21, 21.0 to
 
 The CPU comes from `/proc/cpuinfo`: x86-64 with `avx512f`, `avx512bw`, `avx512vbmi` and `bmi2` (Intel Ice Lake or newer, AMD Zen 4 or newer). Anything that isn't x86-64 is safe.
 
-The flags are the ones the JVM actually applies. `-XX:-UseBASE64Intrinsics` or `-XX:UseAVX=2` (or lower) mitigates. For a running process the tool asks the JVM with `jcmd <pid> VM.flags -all`, or rebuilds the flags from its command line, argument files and environment in the order the JVM reads them (`JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, command line, `_JAVA_OPTIONS`). So `-XX:-UseBASE64Intrinsics -XX:+UseBASE64Intrinsics` correctly counts as not mitigated. `-Xint` and similar JIT limits are reported but not counted as a mitigation.
+The flags are the ones the JVM actually applies. `-XX:-UseBASE64Intrinsics` or `-XX:UseAVX=2` (or lower) mitigates. For a running process the tool rebuilds them from its command line, argument files and environment in the order the JVM reads them (`JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, command line, `_JAVA_OPTIONS`); on real hardware this matched the JVMs' own `jcmd VM.flags` output for every JVM tested. So `-XX:-UseBASE64Intrinsics -XX:+UseBASE64Intrinsics` correctly counts as not mitigated. `-Xint` and similar JIT limits are reported but not counted as a mitigation.
 
 ## Safety
 
@@ -110,7 +110,7 @@ The tool changes nothing and sends nothing to any service. [`AGENTS.md`](AGENTS.
 
 - `host` only reads `/proc`.
 - `check.sh` starts `java -version` and `java -XX:+PrintFlagsFinal -version` with this environment's options, so a `-javaagent` set in `JAVA_TOOL_OPTIONS` starts too.
-- `port` never runs a binary that belongs to the process it checks, and runs `jcmd` only as that process's own user.
+- `port` also only reads files. It never runs anything that belongs to the process it checks (no `java`, no `jcmd`): run from the host, a binary from a container's filesystem would escape that container's isolation.
 - `container` copies the tool into the container's `/tmp` and removes it afterwards. Read-only and shell-less containers are checked from a fresh copy of the same image instead.
 - `image` may pull the image; its containers run without network.
 - Command lines and `JAVA_*OPTIONS` often hold secrets, so only the JVM options that matter for this CVE are printed.
@@ -121,7 +121,7 @@ Only run it on systems you're allowed to check.
 
 - It checks whether a JVM is exploitable, not whether an attacker can reach it. Calif showed default-config reachability in Jira, Confluence, Jenkins, Keycloak, Artifactory, PingFederate and others.
 - It doesn't reproduce the bug. A vendor build that backported the fix without changing its version number is still reported by its version.
-- Updating the JDK doesn't fix a JVM that's already running. `host` and `port` report these as RESTART_REQUIRED. Rebuild images pinned to old digests too.
+- Updating the JDK doesn't fix a JVM that's already running. `host` and `port` detect it: run as root on the host, they read the version still running from memory, so a JVM that's still vulnerable stays VULNERABLE; when they can't read it, they report RESTART_REQUIRED. Rebuild images pinned to old digests too.
 - Java clients count, not just servers: a client that connects to a malicious TLS server can be hit. Include build agents, workers and CLI tools.
 - A laptop or CI runner that says "NOT VULNERABLE ON THIS HOST" only speaks for its own CPU. If the version is affected, the same JDK is exploitable on any AVX-512 VBMI machine, and the output says so.
 - An amd64 image run on an arm64 machine runs under emulation, which hides AVX-512. `image` detects this and exits 3.

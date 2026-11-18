@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.1 (2026-11-18)
+
+Security fix for port mode. Upgrade if you run `check-port.sh` as root
+against JVMs in containers.
+
+- **`check-port.sh` no longer runs `jcmd` from the target's JDK.** In 1.0.0,
+  port mode run as root ran the target JVM's own `jcmd` (as the JVM's user)
+  to read its flags. For a JVM in a container, that binary came from the
+  container's filesystem but ran in the host's namespaces, outside the
+  container's isolation (host network, host filesystem, no seccomp or
+  AppArmor). A malicious image could use it to run code on the node when a
+  defender checked that container. Port mode now only reads files: flags are
+  rebuilt from `/proc` (the method host mode already used, which matched
+  `jcmd` on every JVM tested on real hardware). Host mode, container mode,
+  image mode and the AWS SSM runner were not affected.
+- JVMs still running a JDK that was replaced on disk: the running version is
+  now read from the old libjvm still mapped in memory (read only, root on the
+  host), in both host and port mode. A JVM still running a vulnerable version
+  is reported VULNERABLE (with a restart note) instead of RESTART_REQUIRED;
+  RESTART_REQUIRED remains when the running version can't be read.
+
 ## 1.0.0 (2026-11-18)
 
 First public release.
@@ -18,7 +39,7 @@ JDK version × CPU (x86-64 with AVX-512 VBMI) × effective JVM flags. Linux
 - `check.sh`: the JDK on a machine with the environment's options.
 - `check-port.sh <port>` / `--pid <pid>`: the service behind a port. Reads
   effective flags with `jcmd` (run as the process's own user) or rebuilds
-  them from `/proc`; never executes a binary belonging to the target.
+  them from `/proc` (see 1.0.1).
 - `check-container.sh`: a running Docker container and every JVM in it;
   read-only and shell-less containers are replayed from the same image ID.
 - `check-image.sh`: a Docker image, including distroless; detects emulation.

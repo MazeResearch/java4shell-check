@@ -291,20 +291,47 @@ eq "host -X" "$(hclass j4s-test-h2)" "MITIGATED"
 eq "host _JAVA_OPTIONS overrides" "$(hclass j4s-test-h3)" "VULNERABLE"
 eq "host @argfile" "$(hclass j4s-test-h4)" "MITIGATED"
 eq "host OpenJ9" "$(hclass j4s-test-h5)" "NOT_VULNERABLE"
-eq "host replaced JDK" "$(hclass j4s-test-h6)" "RESTART_REQUIRED"
+hfield() { # container, field
+  _pid=$(docker inspect -f '{{.State.Pid}}' "$1")
+  printf '%s\n' "$HOST_OUT" | grep "^J4S_JVM" | grep "	pid=$_pid	" | tr '\t' '\n' | sed -n "s/^$2=//p"
+}
+# JDK replaced on disk while running: the running version is read from the old
+# libjvm in memory (root on the host can), so the still-vulnerable JVM is
+# VULNERABLE, not merely "restart required".
+eq "host replaced JDK: class from the running version" "$(hclass j4s-test-h6)" "VULNERABLE"
+eq "host replaced JDK: running version read from memory" "$(hfield j4s-test-h6 version)" "21.0.13(running;JDK-replaced-on-disk)"
+eq "host replaced JDK: flagged stale" "$(hfield j4s-test-h6 stale)" "1"
 eq "host --enable-native-access value skipped" "$(hclass j4s-test-h7)" "MITIGATED"
 eq "host tab-separated JAVA_TOOL_OPTIONS" "$(hclass j4s-test-h8)" "MITIGATED"
 eq "host newline-smuggled env var ignored" "$(hclass j4s-test-h9)" "VULNERABLE"
 eq "host argfile option after main class ignored" "$(hclass j4s-test-h10)" "VULNERABLE"
 
-echo "== integration: check-port.sh as root against a non-root JVM (jcmd as its owner)"
+echo "== integration: check-port.sh from the host against a container with a planted jcmd"
+# A malicious image ships a fake jcmd. Port mode, run as root from the host
+# (here: a privileged checker sharing the host PID namespace), must never
+# execute it - it would run outside the container's isolation.
+mkdir -p "$WORK/mark"
 docker rm -f j4s-test-port >/dev/null 2>&1
-docker run -d --name j4s-test-port $LABEL $SIM --user 1000:1000 -v "$WORK/app":/app:ro -v "$TOOL_DIR":/t:ro \
+docker run -d --name j4s-test-port $LABEL $SIM --user 1000:1000 -v "$WORK/app":/app:ro \
   --entrypoint java $T21 -XX:-UseBASE64Intrinsics -XX:+UseBASE64Intrinsics -cp /app SampleServer 5000 >/dev/null
 i=0; while [ $i -lt 30 ] && ! docker logs j4s-test-port 2>&1 | grep -q listening; do sleep 1; i=$((i + 1)); done
-_o=$(docker exec -u 0 --privileged j4s-test-port sh /t/check-port.sh 5000 2>&1)
-eq "port jcmd as owner: flags from jcmd" "$(printf '%s\n' "$_o" | grep -c '^  source: jcmd 1 VM.flags')" "1"
-eq "port jcmd as owner: class" "$(result "$_o" class)" "VULNERABLE"
+docker exec -u 0 j4s-test-port sh -c 'printf "#!/bin/sh\ntouch /mark/PWNED\necho J4S_PWNED\n" > /opt/java/openjdk/bin/jcmd && chmod 755 /opt/java/openjdk/bin/jcmd'
+_hp=$(docker inspect -f '{{.State.Pid}}' j4s-test-port)
+_o=$(docker run --rm $LABEL --privileged --pid=host $SIM -v "$TOOL_DIR":/t:ro -v "$WORK/mark":/mark \
+     --entrypoint sh $T21 /t/check-port.sh --pid "$_hp" 2>&1)
+eq "port vs planted jcmd: class (flags rebuilt from /proc)" "$(result "$_o" class)" "VULNERABLE"
+eq "port vs planted jcmd: planted binary never ran" "$( { ls "$WORK/mark"; printf '%s\n' "$_o" | grep J4S_PWNED; } | grep -c PWNED)" "0"
+
+echo "== integration: check-port.sh, JDK replaced on disk, old libjvm not readable"
+# Without CAP_SYS_ADMIN the running version can't be read from memory: the
+# verdict must be RESTART_REQUIRED, never a guess.
+docker rm -f j4s-test-stale >/dev/null 2>&1
+docker run -d --name j4s-test-stale $LABEL $SIM -v "$WORK/app":/app:ro -v "$TOOL_DIR":/t:ro --entrypoint sh $T21 \
+  -c 'cp -a /opt/java/openjdk /opt/jdk && exec /opt/jdk/bin/java -cp /app SampleServer 5000' >/dev/null
+i=0; while [ $i -lt 30 ] && ! docker logs j4s-test-stale 2>&1 | grep -q listening; do sleep 1; i=$((i + 1)); done
+docker exec j4s-test-stale sh -c 'cp /opt/jdk/lib/server/libjvm.so /tmp/l && rm /opt/jdk/lib/server/libjvm.so && cp /tmp/l /opt/jdk/lib/server/libjvm.so'
+_o=$(docker exec j4s-test-stale sh /t/check-port.sh 5000 2>&1)
+eq "port replaced JDK, memory unreadable: class" "$(result "$_o" class)" "RESTART_REQUIRED"
 
 echo "== integration: check-container.sh"
 ctr() { # label, container, expected exit

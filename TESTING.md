@@ -45,15 +45,17 @@ IBM Semeru 21, distroless Java 21):
   of the test host.
 - `check-port.sh`: default flags, `-` then `+` (not mitigated), `-`
   (mitigated), `_JAVA_OPTIONS` overriding the command line, mitigation via
-  `JAVA_TOOL_OPTIONS`, OpenJ9, `jcmd` run as the owner of a non-root JVM,
-  and a process that spoofs `argv[0]` to make the checker run a planted
-  binary (it never runs).
+  `JAVA_TOOL_OPTIONS`, OpenJ9, a process that spoofs `argv[0]` to make the
+  checker run a planted binary, and a container whose image ships a planted
+  `jcmd`, checked from the host as root (neither is ever run); a JDK
+  replaced on disk when the old libjvm can't be read (RESTART_REQUIRED).
 - `check-host.sh` on one host with ten JVM containers: all of the above
   plus `@argfile`, `--enable-native-access`, tab-separated
   `JAVA_TOOL_OPTIONS`, an environment variable whose value smuggles a fake
   `_JAVA_OPTIONS` line (ignored), a mitigation flag placed after the main
   class in an argument file (ignored, as the JVM does), and a JDK replaced on
-  disk under a running JVM (RESTART_REQUIRED).
+  disk under a running JVM (running version read from the old libjvm in
+  memory: VULNERABLE).
 - `check-container.sh`: a vulnerable container, a read-only container
   (replayed via image mode), a non-root container; the tool's copy is removed
   every time.
