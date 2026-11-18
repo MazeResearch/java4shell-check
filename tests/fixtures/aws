@@ -1,0 +1,53 @@
+#!/bin/sh
+# Fake `aws` CLI for tests/run.sh: simulates the SSM calls made by
+# cloud/aws-ssm-host-check.sh, with no network access.
+#
+#   FAKE_AWS_STATE      directory for call counters (required)
+#   FAKE_AWS_FAIL_LIST  =1: describe-instance-information fails (bad credentials)
+#
+# Online instances: i-1 i-2 i-3. The first list-command-invocations call
+# reports i-1 and i-2 still pending, printed the way the real CLI prints a
+# paginated result (one JMESPath result per page, on separate lines); later
+# calls report nothing pending. i-3's output is truncated (no J4S_HOST line).
+
+set -u
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --profile|--region) shift 2 ;;
+    *) break ;;
+  esac
+done
+svc=$1; op=$2; shift 2
+[ "$svc" = ssm ] || { echo "fake aws: unsupported service $svc" >&2; exit 255; }
+
+arg() { # value of option $1 in the remaining arguments
+  _want=$1; shift
+  while [ $# -gt 0 ]; do
+    [ "$1" = "$_want" ] && { printf '%s' "$2"; return; }
+    shift
+  done
+}
+
+case "$op" in
+  describe-instance-information)
+    if [ "${FAKE_AWS_FAIL_LIST:-0}" = 1 ]; then
+      echo "An error occurred (UnrecognizedClientException): The security token included in the request is invalid." >&2
+      exit 254
+    fi
+    printf 'i-1\ti-2\ti-3\n' ;;
+  send-command)
+    echo "cmd-0001" ;;
+  list-command-invocations)
+    n=$(cat "$FAKE_AWS_STATE/list" 2>/dev/null || echo 0)
+    echo $((n + 1)) > "$FAKE_AWS_STATE/list"
+    if [ "$n" -eq 0 ]; then printf 'i-1\ni-2\n'; fi ;;
+  get-command-invocation)
+    iid=$(arg --instance-id "$@")
+    case "$iid" in
+      i-1) out='J4S_JVM\thost=n1\thw=HW_VULNERABLE\tpid=7\tctr=abc\tname=web-1\tjdk=/opt/java/openjdk\tvendor=Eclipse_Adoptium\tversion=21.0.13\tvstat=AFFECTED_VERSION\tflags=default(enabled)\tstale=0\tclass=VULNERABLE\nJ4S_HOST\thost=n1\thw=HW_VULNERABLE\tjvms=1\tvulnerable=1\tworst=1\nJ4S_EXIT=1\n' ;;
+      i-2) out='J4S_HOST\thost=n2\thw=HW_SAFE\tjvms=0\tvulnerable=0\tworst=0\nJ4S_EXIT=0\n' ;;
+      *)   out='J4S_JVM\thost=n3\thw=HW_VULNERABLE\tpid=9\tctr=def\tname=api-2\tjdk=/opt/java/openjdk\tvendor=Eclipse_Adoptium\tversion=17.0.6\tvstat=AFFECTED_VERSION\tflags=FLAG_OFF\tstale=0\tclass=MITIGATED\nJ4S_JVM\thost=n3\thw=HW_VUL' ;;
+    esac
+    printf '["Success", "%s"]\n' "$out" ;;
+  *) echo "fake aws: unsupported ssm $op" >&2; exit 255 ;;
+esac

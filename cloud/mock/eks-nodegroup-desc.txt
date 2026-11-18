@@ -1,0 +1,3 @@
+ng-core	c6i.xlarge	c6i.4xlarge
+ng-spot	m5.xlarge	c5.large
+ng-arm	c7g.xlarge

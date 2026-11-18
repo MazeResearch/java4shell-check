@@ -1,0 +1,3 @@
+prod-eks	ng-core
+prod-eks	ng-spot
+staging-eks	ng-arm

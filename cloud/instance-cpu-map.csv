@@ -1,0 +1,151 @@
+# Java4Shell (CVE-2026-114938) cloud CPU capability map.
+# cpu_class meanings:
+#   avx512vbmi-yes = CPU family supports AVX-512 VBMI -> hardware CAN execute the vulnerable path -> candidate, run check.sh
+#   avx512vbmi-no  = (high confidence only) CPU has no VBMI (either AVX-512 without VBMI, or no AVX-512 at all) -> NOT vulnerable via this path
+#   arm            = ARM64 -> not vulnerable
+#   unknown        = not mapped (new/rare family) -> treat as candidate, run check.sh
+#
+# IMPORTANT: cpu_class is a HARDWARE pre-filter, not a vulnerability verdict.
+# A "yes" instance still needs the in-place check (JDK version, flags, runtime).
+# A "no"/"arm" instance is definitively clear for THIS vulnerability.
+# Confidence "medium" rows are derived from vendor docs but should be confirmed
+# by running java4shell-check/check.sh on one instance of that family.
+#
+# Sources: AWS instance-types hardware pages, GCP machine-series docs,
+# Azure VM sizes docs, Intel/AMD instruction set references.
+cloud,family,cpu_class,confidence,cpu_gen,notes
+aws,c6i,avx512vbmi-yes,high,Intel Ice Lake,
+aws,c6id,avx512vbmi-yes,high,Intel Ice Lake,local NVMe variant
+aws,c6in,avx512vbmi-yes,high,Intel Ice Lake,network-optimized
+aws,m6i,avx512vbmi-yes,high,Intel Ice Lake,
+aws,m6id,avx512vbmi-yes,high,Intel Ice Lake,local NVMe variant
+aws,m6idn,avx512vbmi-yes,high,Intel Ice Lake,network-optimized
+aws,m6in,avx512vbmi-yes,high,Intel Ice Lake,network-optimized
+aws,r6i,avx512vbmi-yes,high,Intel Ice Lake,
+aws,r6id,avx512vbmi-yes,high,Intel Ice Lake,local NVMe variant
+aws,r6idn,avx512vbmi-yes,high,Intel Ice Lake,network-optimized
+aws,r6in,avx512vbmi-yes,high,Intel Ice Lake,network-optimized
+aws,x2i,avx512vbmi-yes,high,Intel Ice Lake,
+aws,x2iedn,avx512vbmi-yes,high,Intel Ice Lake,
+aws,i4i,avx512vbmi-yes,high,Intel Ice Lake,storage optimized
+aws,i7ie,avx512vbmi-yes,high,Intel Sapphire Rapids,storage optimized
+aws,c7i,avx512vbmi-yes,high,Intel Sapphire Rapids,
+aws,m7i,avx512vbmi-yes,high,Intel Sapphire Rapids,m7i-flex normalizes to m7i
+aws,r7i,avx512vbmi-yes,high,Intel Sapphire Rapids,
+aws,r7iz,avx512vbmi-yes,high,Intel Sapphire Rapids,high frequency
+aws,c7a,avx512vbmi-yes,high,AMD Zen 4 Genoa,
+aws,m7a,avx512vbmi-yes,high,AMD Zen 4 Genoa,
+aws,r7a,avx512vbmi-yes,high,AMD Zen 4 Genoa,
+aws,hpc7a,avx512vbmi-yes,high,AMD Zen 4 Genoa,HPC
+aws,c8i,avx512vbmi-yes,high,Intel Xeon 6 (6975P-C),8th gen; verified on a live instance
+aws,m8i,avx512vbmi-yes,high,Intel Xeon 6 (6975P-C),8th gen; verified on a live instance
+aws,r8i,avx512vbmi-yes,high,Intel Xeon 6 (6975P-C),8th gen; verified on a live instance
+aws,p5,unknown,medium,AMD EPYC Milan (3rd gen) per AWS docs - verify; p5en is Sapphire Rapids,H100 GPU hosts
+aws,trn1,avx512vbmi-yes,medium,Intel Ice Lake,Trainium hosts
+aws,c5,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,c5d,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,c5n,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,c5a,avx512vbmi-no,high,AMD Zen 2 Rome,no AVX-512
+aws,c5ad,avx512vbmi-no,high,AMD Zen 2 Rome,no AVX-512
+aws,m5,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,m5a,avx512vbmi-no,high,AMD Zen 2 Rome,no AVX-512
+aws,m5ad,avx512vbmi-no,high,AMD Zen 2 Rome,no AVX-512
+aws,m5d,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,m5dn,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,m5n,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,m5zn,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+aws,r5,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,r5a,avx512vbmi-no,high,AMD Zen 2 Rome,no AVX-512
+aws,r5ad,avx512vbmi-no,high,AMD Zen 2 Rome,no AVX-512
+aws,r5b,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+aws,r5d,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,r5dn,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,r5n,avx512vbmi-no,high,Intel Skylake/Cascade Lake,AVX-512 without VBMI
+aws,c6a,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+aws,c6ad,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+aws,m6a,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+aws,m6ad,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+aws,r6a,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+aws,r6ad,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+aws,hpc6a,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+aws,i3,avx512vbmi-no,high,Intel Skylake,no AVX-512 VBMI
+aws,i3en,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+aws,z1d,avx512vbmi-no,high,Intel Skylake,AVX-512 without VBMI
+aws,d3,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+aws,d3en,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+aws,d2,avx512vbmi-no,high,Intel Haswell/Broadwell,no AVX-512
+aws,t2,avx512vbmi-no,high,Intel older gens,no AVX-512
+aws,t3,avx512vbmi-no,high,Intel Skylake,no AVX-512 VBMI
+aws,g4dn,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+aws,g5,avx512vbmi-no,high,AMD EPYC Rome (Zen 2) - no AVX-512,AMD EPYC Rome: no AVX-512 at all
+aws,p4d,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+aws,a1,arm,high,AWS Graviton1,ARM64
+aws,c6g,arm,high,AWS Graviton2,ARM64
+aws,c6gd,arm,high,AWS Graviton2,ARM64
+aws,c6gn,arm,high,AWS Graviton2,ARM64
+aws,c7g,arm,high,AWS Graviton3,ARM64
+aws,c7gd,arm,high,AWS Graviton3,ARM64
+aws,c7gn,arm,high,AWS Graviton3,ARM64
+aws,c8g,arm,high,AWS Graviton4,ARM64
+aws,g5g,arm,high,AWS Graviton2,ARM64
+aws,im4gn,arm,high,AWS Graviton2,ARM64
+aws,is4gen,arm,high,AWS Graviton2,ARM64
+aws,m6g,arm,high,AWS Graviton2,ARM64
+aws,m6gd,arm,high,AWS Graviton2,ARM64
+aws,m6gn,arm,high,AWS Graviton2,ARM64
+aws,m7g,arm,high,AWS Graviton3,ARM64
+aws,m7gd,arm,high,AWS Graviton3,ARM64
+aws,r6g,arm,high,AWS Graviton2,ARM64
+aws,r6gd,arm,high,AWS Graviton2,ARM64
+aws,r6gn,arm,high,AWS Graviton2,ARM64
+aws,r7g,arm,high,AWS Graviton3,ARM64
+aws,r7gd,arm,high,AWS Graviton3,ARM64
+aws,r8g,arm,high,AWS Graviton4,ARM64
+aws,t4g,arm,high,AWS Graviton2,ARM64
+aws,x2gd,arm,high,AWS Graviton2,ARM64
+aws,mac1,unknown,medium,Intel Coffee Lake / Apple M1,bare-metal Mac
+aws,mac2,unknown,medium,Apple M2,bare-metal Mac
+aws,inf2,unknown,medium,host CPU unverified,Inferentia2 hosts
+aws,trn2,unknown,medium,host CPU unverified,Trainium2 hosts
+aws,g6,unknown,medium,host CPU unverified,L4 GPU hosts
+aws,g6e,unknown,medium,host CPU unverified,L4 GPU hosts
+aws,x2iezn,avx512vbmi-no,high,Intel Cascade Lake (8252C),verified on a live instance: no VBMI
+aws,t3a,avx512vbmi-no,high,AMD EPYC 1st gen (Zen 1),no AVX-512 at all
+aws,c8a,avx512vbmi-yes,high,AMD Zen 5 Turin,AVX-512 incl. VBMI
+aws,m8a,avx512vbmi-yes,high,AMD Zen 5 Turin,AVX-512 incl. VBMI
+aws,r8a,avx512vbmi-yes,high,AMD Zen 5 Turin,AVX-512 incl. VBMI
+aws,m8g,arm,high,AWS Graviton4,
+gcp,c3,avx512vbmi-yes,high,Intel Sapphire Rapids,
+gcp,c3d,avx512vbmi-yes,high,AMD Zen 4 Genoa,
+gcp,m3,avx512vbmi-yes,high,Intel Ice Lake,memory optimized
+gcp,c4,avx512vbmi-yes,medium,Intel Emerald Rapids,verify with check.sh
+gcp,x4,avx512vbmi-yes,medium,Intel Sapphire Rapids,verify with check.sh
+gcp,n2,unknown,high,Intel Cascade Lake OR Ice Lake (zone/min-CPU-platform dependent) - check per VM,mixed hosts - Ice Lake VMs are candidates
+gcp,n2d,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+gcp,c2,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+gcp,c2d,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+gcp,t2d,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+gcp,n1,avx512vbmi-no,high,Intel Sandy/Ivy/Haswell,no AVX-512
+gcp,m1,avx512vbmi-no,high,Intel Broadwell/Skylake,no AVX-512 VBMI
+gcp,m2,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+gcp,a2,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+gcp,g2,unknown,medium,Intel Cascade Lake (medium confidence - a no must be certain),verify with check.sh
+gcp,e2,unknown,medium,mixed CPU generations,shared-core; verify with check.sh
+gcp,n4,unknown,medium,unknown generation,verify with check.sh
+gcp,c4a,arm,high,Google Axion,ARM64
+gcp,t2a,arm,high,Ampere Altra,ARM64
+azure,D-v5,avx512vbmi-yes,high,Intel Ice Lake,Dsv5/Dv5/Ddsv5 etc
+azure,E-v5,avx512vbmi-yes,high,Intel Ice Lake,Esv5/Ev5 etc
+azure,F-v6,avx512vbmi-yes,medium,Intel Emerald Rapids? verify with check.sh,
+azure,D-v6,avx512vbmi-yes,medium,Intel Emerald Rapids? verify with check.sh,
+azure,E-v6,avx512vbmi-yes,medium,Intel Emerald Rapids? verify with check.sh,
+azure,HB-v4,avx512vbmi-yes,medium,AMD Zen 4 Genoa,HPC
+azure,D-v4,unknown,high,Intel Cascade Lake OR Ice Lake hosts - check per VM,mixed hosts - Ice Lake VMs are candidates
+azure,E-v4,unknown,high,Intel Cascade Lake OR Ice Lake hosts - check per VM,mixed hosts - Ice Lake VMs are candidates
+azure,F-v2,avx512vbmi-no,high,Intel Skylake,AVX-512 without VBMI
+azure,Das-v5,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+azure,Eas-v5,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+azure,HB-v3,avx512vbmi-no,high,AMD Zen 3 Milan,no AVX-512
+azure,HC,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+azure,M-v2,avx512vbmi-no,high,Intel Cascade Lake,AVX-512 without VBMI
+azure,NC-v3,avx512vbmi-no,high,Intel Broadwell,Broadwell: no AVX-512 at all
